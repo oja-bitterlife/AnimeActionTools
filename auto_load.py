@@ -28,11 +28,13 @@ def init():
     # 並び替え
     from . import AnimeActionTools
     from . import UI_ActionEdit
+    from . import UI_BonePhysics
     from . import UI_ImportExport
 
     orders = [
         AnimeActionTools.ANIME_ACTION_TOOLS_PT_ui,
         UI_ActionEdit.ANIME_ACTION_TOOLS_PT_action_edit,
+        UI_BonePhysics.ANIME_POSE_TOOLS_PT_bone_physics,
         UI_ImportExport.ANIME_ACTION_TOOLS_PT_import_export,
     ]
     no_ordered = filter(lambda c: c not in orders, ordered_classes)
