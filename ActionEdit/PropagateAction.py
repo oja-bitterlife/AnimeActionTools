@@ -34,27 +34,29 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
 
             # ActiveBoneだけ処理
             if bone_name == target_bone.name:
-                # 回転だけコピー
-                if target_bone.rotation_mode == "QUATERNION" and attribute != "rotation_quaternion":
-                    continue
-                if target_bone.rotation_mode == "AXIS_ANGLE" and attribute != "rotation_axis_angle":
-                    continue
-                if attribute != "rotation_euler":
-                    continue
+                # 回転だけコピー(モードと一致するもののみ)
+                if target_bone.rotation_mode == "QUATERNION":
+                    if attribute != "rotation_quaternion":
+                        continue
+                elif target_bone.rotation_mode == "AXIS_ANGLE":
+                    if attribute != "rotation_axis_angle":
+                        continue
+                else:
+                    if attribute != "rotation_euler":
+                        continue
 
                 # 回転情報の回収
                 for i, point in enumerate(fcurve.keyframe_points):
                     point_key = "p_%d" % i
                     if point_key not in keyframe_rots:
                         if attribute == "rotation_quaternion":
-                            keyframe_rots[point_key] = ["Q", point.co[0], 0, 0, 0, 0]  # w, x, y, z
+                            keyframe_rots[point_key] = [point.co[0], 0, 0, 0, 0]  # w, x, y, z
                         elif attribute == "rotation_axis_angle":
-                            keyframe_rots[point_key] = ["A", point.co[0], 0, 0, 0, 0]  # w, (x, y, z)
+                            keyframe_rots[point_key] = [point.co[0], 0, 0, 0, 0]  # w, (x, y, z)
                         else:  # rotation_euler
-                            keyframe_rots[point_key] = ["E", point.co[0], 0, 0, 0]  # x, y, z
+                            keyframe_rots[point_key] = [point.co[0], 0, 0, 0]  # x, y, z
     
-                    keyframe_rots[point_key][fcurve.array_index+2] = point.co[1]
-
+                    keyframe_rots[point_key][fcurve.array_index+1] = point.co[1]
 
         # 子Boneにkeyframeを突っ込む
         for child_bone in children_list:
@@ -79,24 +81,19 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
                 new_fcurves = [action.fcurves.new(data_path=data_path, index=i, action_group=child_bone.name) for i in range(3)]
 
             # keyframeの転送開始
-            for point_rot in keyframe_rots:
+            for point_rot in keyframe_rots.values():
                 # keyframe_pointsのコピー
-                if point_rot[0] == "Q":
-                    # 変化
-                    frame_no = point_rot[1] + int(context.scene.AHT_propagate_offset * parent_distance)
+                if target_bone.rotation_mode == "QUATERNION":
+                    # 線形
+                    frame_no = point_rot[0] + int(context.scene.AHT_propagate_offset * parent_distance)
                     ratio = max(0, 1 - (context.scene.AHT_propagate_damping * parent_distance))
 
-                    # quaternionのときはwだけ操作する
-                    if point_rot[0] == "Q":
-                        w = point_rot[2]*ratio
-                        x = point_rot[3]*ratio
-                        y = point_rot[4]*ratio
-                        z = point_rot[5]*ratio
-
-                        new_fcurves[0].keyframe_points.insert(frame_no, w)
-                        new_fcurves[1].keyframe_points.insert(frame_no, x)
-                        new_fcurves[2].keyframe_points.insert(frame_no, y)
-                        new_fcurves[3].keyframe_points.insert(frame_no, z)
+                    axis, angle = mathutils.Quaternion((point_rot[1], point_rot[2], point_rot[3], point_rot[4])).to_axis_angle()
+                    q = mathutils.Quaternion(axis, angle*ratio)
+                    new_fcurves[0].keyframe_points.insert(frame_no, q.w)
+                    new_fcurves[1].keyframe_points.insert(frame_no, q.x)
+                    new_fcurves[2].keyframe_points.insert(frame_no, q.y)
+                    new_fcurves[3].keyframe_points.insert(frame_no, q.z)
 
 
 
