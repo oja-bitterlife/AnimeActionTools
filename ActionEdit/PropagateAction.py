@@ -39,6 +39,11 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
                     continue
                 keyframes["%s:%d" % (attribute, fcurve.array_index)] = fcurve.keyframe_points
 
+        damping_info = {
+            "keyframe_offset": keyframe_offset,
+            "keyframe_damping": keyframe_damping,
+        }
+
         # 子Boneにkeyframeを突っ込む
         for child_bone in children_list:
             parent_distance = CopyUtil.calc_parent_distance(target_bone, child_bone)
@@ -55,24 +60,32 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
                 data_path = 'pose.bones["%s"].%s' % (child_bone.name, attribute)
                 new_fcurve = action.fcurves.new(data_path=data_path, index=index, action_group=child_bone.name)
 
+                # 計算用に記録
+                damping_info["attribute"] = attribute
+                damping_info["index"] = index
+
                 # keyframe_pointsのコピー
                 for point in keyframes[keyname]:
-                    # 変化
-                    offset = parent_distance * keyframe_offset
-                    damping = pow(keyframe_damping, parent_distance)
-
-                    # quaternionのときはwだけ操作する
-                    if attribute == "rotation_quaternion":
-                        if index != 0:
-                            damping = 1
-                        else:
-                            damping = 1.0 / damping  # wには逆数を使う
-
                     # Keyframeの追加
-                    new_point = new_fcurve.keyframe_points.insert(point.co[0]+offset, point.co[1]*damping)
+                    self._create_rot_key(parent_distance, new_fcurve, point, damping_info)
 
-                    # co以外の残りのパラメータをコピー
-                    CopyUtil.copy_keyframe(point, new_point) 
+    def _create_rot_key(self, parent_distance, new_fcurve, point, damping_info):
+        # 変化
+        offset = parent_distance * damping_info["keyframe_offset"]
+        damping = pow(damping_info["keyframe_damping"], parent_distance)
+
+        # quaternionのときはwだけ操作する
+        if damping_info["attribute"] == "rotation_quaternion":
+            if damping_info["index"] != 0:
+                damping = 1
+            else:
+                damping = 1.0 / damping  # wには逆数を使う
+
+        new_point = new_fcurve.keyframe_points.insert(point.co[0]+offset, point.co[1]*damping)
+
+        # co以外の残りのパラメータをコピー
+        CopyUtil.copy_keyframe(point, new_point) 
+
 
 
 # 子ボーンのキーフレームを削除する。スッキリさせて再出発用
