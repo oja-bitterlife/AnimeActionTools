@@ -82,21 +82,27 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
 
             # keyframeの転送開始
             for point_rot in keyframe_rots.values():
-                # keyframe_pointsのコピー
-                if target_bone.rotation_mode == "QUATERNION":
-                    # 線形
-                    frame_no = point_rot[0] + int(context.scene.AHT_propagate_offset * parent_distance)
-                    ratio = max(0, 1 - (context.scene.AHT_propagate_damping * parent_distance))
+                # 線形
+                frame_no = point_rot[0] + int(context.scene.AHT_propagate_offset * parent_distance)
+                ratio = max(0, 1 - (context.scene.AHT_propagate_damping * parent_distance))
 
+                # quaternionは一旦axis_angleに変えて計算
+                if target_bone.rotation_mode == "QUATERNION":
                     axis, angle = mathutils.Quaternion((point_rot[1], point_rot[2], point_rot[3], point_rot[4])).to_axis_angle()
                     q = mathutils.Quaternion(axis, angle*ratio)
                     new_fcurves[0].keyframe_points.insert(frame_no, q.w)
                     new_fcurves[1].keyframe_points.insert(frame_no, q.x)
                     new_fcurves[2].keyframe_points.insert(frame_no, q.y)
                     new_fcurves[3].keyframe_points.insert(frame_no, q.z)
-
-
-
+                elif target_bone.rotation_mode == "AXIS_ANGLE":
+                    new_fcurves[0].keyframe_points.insert(frame_no, point_rot[1] * ratio)
+                    new_fcurves[1].keyframe_points.insert(frame_no, point_rot[2])
+                    new_fcurves[2].keyframe_points.insert(frame_no, point_rot[3])
+                    new_fcurves[3].keyframe_points.insert(frame_no, point_rot[4])
+                else:
+                    new_fcurves[0].keyframe_points.insert(frame_no, point_rot[1] * ratio)
+                    new_fcurves[1].keyframe_points.insert(frame_no, point_rot[2] * ratio)
+                    new_fcurves[2].keyframe_points.insert(frame_no, point_rot[3] * ratio)
 
 
 # 子ボーンのキーフレームを削除する。スッキリさせて再出発用
