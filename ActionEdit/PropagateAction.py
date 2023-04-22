@@ -1,20 +1,20 @@
-import bpy, re
+import bpy, re, mathutils
 from . import CopyUtil
 
 # 回転系のKeyframeを子ボーンにコピーする
 class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
     bl_idname = "anime_hair_tools.copy_rotation_keys"
-    bl_label = "Copy Rotation Keys"
+    bl_label = "Propagate Rotation"
 
     # execute
     def execute(self, context):
         # 選択中のボーン一つ一つを親にして処理
         for target_bone in context.selected_pose_bones:
-            self.copy_rotation_keys(target_bone, context.scene.AHT_keyframe_offset, context.scene.AHT_keyframe_damping)
+            self.copy_rotation_keys(context, target_bone)
         return {'FINISHED'}
 
     # target_bone以下のボーンにKeyframeをコピーする
-    def copy_rotation_keys(self, target_bone, keyframe_offset, keyframe_damping):
+    def copy_rotation_keys(self, context, target_bone):
         # gather children
         children_list = CopyUtil.pose_bone_gather_children(target_bone)
 
@@ -25,7 +25,7 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
         CopyUtil.remove_all_keys_from_children(action, children_list)
 
         # target_boneのキーフレームを取得
-        keyframes = {}
+        keyframe_rots = {}
         for fcurve in action.fcurves:
             # ボーン名と適用対象の取得
             match = re.search(r'pose.bones\["(.+?)"\].+?([^.]+$)', fcurve.data_path)
@@ -35,14 +35,26 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
             # ActiveBoneだけ処理
             if bone_name == target_bone.name:
                 # 回転だけコピー
-                if attribute != "rotation_quaternion" and attribute != "rotation_euler" and attribute != "rotation_axis_angle":
+                if target_bone.rotation_mode == "QUATERNION" and attribute != "rotation_quaternion":
                     continue
-                keyframes["%s:%d" % (attribute, fcurve.array_index)] = fcurve.keyframe_points
+                if target_bone.rotation_mode == "AXIS_ANGLE" and attribute != "rotation_axis_angle":
+                    continue
+                if attribute != "rotation_euler":
+                    continue
 
-        damping_info = {
-            "keyframe_offset": keyframe_offset,
-            "keyframe_damping": keyframe_damping,
-        }
+                # 回転情報の回収
+                for i, point in enumerate(fcurve.keyframe_points):
+                    point_key = "p_%d" % i
+                    if point_key not in keyframe_rots:
+                        if attribute == "rotation_quaternion":
+                            keyframe_rots[point_key] = ["Q", point.co[0], 0, 0, 0, 0]  # w, x, y, z
+                        elif attribute == "rotation_axis_angle":
+                            keyframe_rots[point_key] = ["A", point.co[0], 0, 0, 0, 0]  # w, (x, y, z)
+                        else:  # rotation_euler
+                            keyframe_rots[point_key] = ["E", point.co[0], 0, 0, 0]  # x, y, z
+    
+                    keyframe_rots[point_key][fcurve.array_index+2] = point.co[1]
+
 
         # 子Boneにkeyframeを突っ込む
         for child_bone in children_list:
@@ -52,39 +64,41 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
                 print("error: parent not found!")
                 continue
 
-            # keyframeの転送開始
-            for keyname in keyframes:
-                # まずは突っ込み先のFCurveを作成
-                attribute, index = keyname.split(":")
-                index = int(index)
-                data_path = 'pose.bones["%s"].%s' % (child_bone.name, attribute)
-                new_fcurve = action.fcurves.new(data_path=data_path, index=index, action_group=child_bone.name)
+            # 回転モードを合わせる
+            child_bone.rotation_mode = target_bone.rotation_mode
 
-                # 計算用に記録
-                damping_info["attribute"] = attribute
-                damping_info["index"] = index
-
-                # keyframe_pointsのコピー
-                for point in keyframes[keyname]:
-                    # Keyframeの追加
-                    self._create_rot_key(parent_distance, new_fcurve, point, damping_info)
-
-    def _create_rot_key(self, parent_distance, new_fcurve, point, damping_info):
-        # 変化
-        offset = parent_distance * damping_info["keyframe_offset"]
-        damping = pow(damping_info["keyframe_damping"], parent_distance)
-
-        # quaternionのときはwだけ操作する
-        if damping_info["attribute"] == "rotation_quaternion":
-            if damping_info["index"] != 0:
-                damping = 1
+            # まずは突っ込み先のFCurveを作成
+            if target_bone.rotation_mode == "QUATERNION":
+                data_path = 'pose.bones["%s"].%s' % (child_bone.name, "rotation_quaternion")
+                new_fcurves = [action.fcurves.new(data_path=data_path, index=i, action_group=child_bone.name) for i in range(4)]
+            elif target_bone.rotation_mode == "AXIS_ANGLE":
+                data_path = 'pose.bones["%s"].%s' % (child_bone.name, "rotation_axis_angle")
+                new_fcurves = [action.fcurves.new(data_path=data_path, index=i, action_group=child_bone.name) for i in range(4)]
             else:
-                damping = 1.0 / damping  # wには逆数を使う
+                data_path = 'pose.bones["%s"].%s' % (child_bone.name, "rotation_euler")
+                new_fcurves = [action.fcurves.new(data_path=data_path, index=i, action_group=child_bone.name) for i in range(3)]
 
-        new_point = new_fcurve.keyframe_points.insert(point.co[0]+offset, point.co[1]*damping)
+            # keyframeの転送開始
+            for point_rot in keyframe_rots:
+                # keyframe_pointsのコピー
+                if point_rot[0] == "Q":
+                    # 変化
+                    frame_no = point_rot[1] + int(context.scene.AHT_propagate_offset * parent_distance)
+                    ratio = max(0, 1 - (context.scene.AHT_propagate_damping * parent_distance))
 
-        # co以外の残りのパラメータをコピー
-        CopyUtil.copy_keyframe(point, new_point) 
+                    # quaternionのときはwだけ操作する
+                    if point_rot[0] == "Q":
+                        w = point_rot[2]*ratio
+                        x = point_rot[3]*ratio
+                        y = point_rot[4]*ratio
+                        z = point_rot[5]*ratio
+
+                        new_fcurves[0].keyframe_points.insert(frame_no, w)
+                        new_fcurves[1].keyframe_points.insert(frame_no, x)
+                        new_fcurves[2].keyframe_points.insert(frame_no, y)
+                        new_fcurves[3].keyframe_points.insert(frame_no, z)
+
+
 
 
 
@@ -125,19 +139,22 @@ def draw(parent, context, layout):
         layout.enabled = False
 
     # Actionを子BoneにCopyする
-    box = layout.box()
-    box.prop(context.scene, "AHT_keyframe_offset", text="Keyframe Offset")
-    box.prop(context.scene, "AHT_keyframe_damping", text="Keyframe Damping")
-    box.operator("anime_hair_tools.copy_rotation_keys")
-    box.operator("anime_hair_tools.remove_children_keys")
+    setting_box = layout.box()
+    setting_box.prop(context.scene, "AHT_propagate_type", text="Type")
+    setting_box.prop(context.scene, "AHT_propagate_offset", text="Offset")
+    setting_box.prop(context.scene, "AHT_propagate_damping", text="Damping")
+    button_box = layout.box()
+    button_box.operator("anime_hair_tools.copy_rotation_keys")
+    button_box.operator("anime_hair_tools.remove_children_keys")
 
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    bpy.types.Scene.AHT_keyframe_offset = bpy.props.IntProperty(name = "keyframe offset", default=5)
-    bpy.types.Scene.AHT_keyframe_damping = bpy.props.FloatProperty(name = "keyframe damping", default=1)
+    bpy.types.Scene.AHT_propagate_type = bpy.props.IntProperty(name = "propagate type", default=1)
+    bpy.types.Scene.AHT_propagate_offset = bpy.props.FloatProperty(name = "propagate offset", default=0)
+    bpy.types.Scene.AHT_propagate_damping = bpy.props.FloatProperty(name = "propagate damping", default=1)
 
 def unregister():
     for cls in reversed(classes):
