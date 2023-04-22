@@ -1,4 +1,4 @@
-import bpy, re, mathutils
+import bpy, re, math, mathutils
 from . import CopyUtil
 
 # 回転系のKeyframeを子ボーンにコピーする
@@ -82,9 +82,24 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
 
             # keyframeの転送開始
             for point_rot in keyframe_rots.values():
-                # 線形
+                # 減衰タイプ
+                if context.scene.AHT_propagate_type == "LINEAR":
+                    ratio = 1 - (context.scene.AHT_propagate_reduce * parent_distance)
+                elif context.scene.AHT_propagate_type == "SQUARE":
+                    ratio = 1 - (context.scene.AHT_propagate_reduce * parent_distance)
+                    ratio = ratio ** 2
+                elif context.scene.AHT_propagate_type == "STEP":
+                    ratio = 1 - pow(context.scene.AHT_propagate_reduce, parent_distance)
+                elif context.scene.AHT_propagate_type == "SIN":
+                    rad = math.radians(context.scene.AHT_propagate_reduce) * parent_distance
+                    ratio = math.cos(rad)
+                elif context.scene.AHT_propagate_type == "SIN2":
+                    rad = math.radians(context.scene.AHT_propagate_reduce) * parent_distance
+                    ratio = math.cos(rad) * 2
+
+
+                # キーを打つフレームを計算
                 frame_no = point_rot[0] + int(context.scene.AHT_propagate_offset * parent_distance)
-                ratio = max(0, 1 - (context.scene.AHT_propagate_damping * parent_distance))
 
                 # quaternionは一旦axis_angleに変えて計算
                 if target_bone.rotation_mode == "QUATERNION":
@@ -145,19 +160,30 @@ def draw(parent, context, layout):
     setting_box = layout.box()
     setting_box.prop(context.scene, "AHT_propagate_type", text="Type")
     setting_box.prop(context.scene, "AHT_propagate_offset", text="Offset")
-    setting_box.prop(context.scene, "AHT_propagate_damping", text="Damping")
+    if context.scene.AHT_propagate_type == "SIN":
+        setting_box.prop(context.scene, "AHT_propagate_reduce", text="Reduce Degree")
+    else:
+        setting_box.prop(context.scene, "AHT_propagate_reduce", text="Reduce Value")
     button_box = layout.box()
     button_box.operator("anime_hair_tools.copy_rotation_keys")
     button_box.operator("anime_hair_tools.remove_children_keys")
 
+PROPAGATE_TYPES = (
+    # id, view, desc
+    ("LINEAR", "Liniar", ""),
+    ("SQUARE", "Square", ""),
+    ("STEP", "Step", ""),
+    ("SIN", "Sin", ""),
+    ("SIN2", "Sin^2", ""),
+)
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    bpy.types.Scene.AHT_propagate_type = bpy.props.IntProperty(name = "propagate type", default=1)
+    bpy.types.Scene.AHT_propagate_type = bpy.props.EnumProperty(name = "propagate type", items=PROPAGATE_TYPES)
     bpy.types.Scene.AHT_propagate_offset = bpy.props.FloatProperty(name = "propagate offset", default=0)
-    bpy.types.Scene.AHT_propagate_damping = bpy.props.FloatProperty(name = "propagate damping", default=1)
+    bpy.types.Scene.AHT_propagate_reduce = bpy.props.FloatProperty(name = "propagate ratio", default=0)
 
 def unregister():
     for cls in reversed(classes):
