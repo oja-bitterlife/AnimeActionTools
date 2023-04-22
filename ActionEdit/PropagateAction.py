@@ -83,13 +83,14 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
             # keyframeの転送開始
             for point_rot in keyframe_rots.values():
                 # 減衰タイプ
-                if context.scene.AHT_propagate_type == "LINEAR":
+                if context.scene.AHT_propagate_type == "STEP":
+                    ratio = pow(context.scene.AHT_propagate_reduce, parent_distance)
+                elif context.scene.AHT_propagate_type == "LINEAR":
                     ratio = 1 - (context.scene.AHT_propagate_reduce * parent_distance)
+                    ratio = max(0, ratio)
                 elif context.scene.AHT_propagate_type == "SQUARE":
-                    ratio = 1 - (context.scene.AHT_propagate_reduce * parent_distance)
-                    ratio = ratio ** 2
-                elif context.scene.AHT_propagate_type == "STEP":
-                    ratio = 1 - pow(context.scene.AHT_propagate_reduce, parent_distance)
+                    ratio = 1 - (context.scene.AHT_propagate_reduce * parent_distance) ** 2
+                    ratio = max(0, ratio)
                 elif context.scene.AHT_propagate_type == "SIN":
                     rad = math.radians(context.scene.AHT_propagate_reduce) * parent_distance
                     ratio = math.cos(rad)
@@ -170,9 +171,9 @@ def draw(parent, context, layout):
 
 PROPAGATE_TYPES = (
     # id, view, desc
+    ("STEP", "Step", ""),
     ("LINEAR", "Liniar", ""),
     ("SQUARE", "Square", ""),
-    ("STEP", "Step", ""),
     ("SIN", "Sin", ""),
     ("SIN2", "Sin^2", ""),
 )
@@ -182,8 +183,8 @@ def register():
         bpy.utils.register_class(cls)
 
     bpy.types.Scene.AHT_propagate_type = bpy.props.EnumProperty(name = "propagate type", items=PROPAGATE_TYPES)
-    bpy.types.Scene.AHT_propagate_offset = bpy.props.FloatProperty(name = "propagate offset", default=0)
-    bpy.types.Scene.AHT_propagate_reduce = bpy.props.FloatProperty(name = "propagate ratio", default=0)
+    bpy.types.Scene.AHT_propagate_offset = bpy.props.FloatProperty(name = "propagate offset", default=1)
+    bpy.types.Scene.AHT_propagate_reduce = bpy.props.FloatProperty(name = "propagate ratio", default=1)
 
 def unregister():
     for cls in reversed(classes):
