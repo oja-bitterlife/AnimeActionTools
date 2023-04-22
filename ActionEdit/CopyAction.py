@@ -1,4 +1,5 @@
 import bpy, re
+from . import CopyUtil
 
 # キーフレームの単純コピー
 class ANIME_HAIR_TOOLS_OT_copy_action(bpy.types.Operator):
@@ -14,7 +15,7 @@ class ANIME_HAIR_TOOLS_OT_copy_action(bpy.types.Operator):
 
         # コピー先BoneのKeyframeを削除する
         action = context.active_object.animation_data.action
-        remove_all_keys_from_children(action, selected_list)
+        CopyUtil.remove_all_keys_from_children(action, selected_list)
 
         # active_boneのキーフレームを取得
         for fcurve in action.fcurves:
@@ -36,7 +37,7 @@ class ANIME_HAIR_TOOLS_OT_copy_action(bpy.types.Operator):
                         new_point = new_fcurve.keyframe_points.insert(point.co[0], point.co[1])
 
                         # co以外の残りのパラメータをコピー
-                        copy_keyframe(point, new_point) 
+                        CopyUtil.copy_keyframe(point, new_point) 
 
         return {'FINISHED'}
 
