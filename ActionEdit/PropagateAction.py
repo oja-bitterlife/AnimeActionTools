@@ -104,7 +104,12 @@ class ANIME_HAIR_TOOLS_OT_copy_rotation_keys(bpy.types.Operator):
 
                 # quaternionは一旦axis_angleに変えて計算
                 if target_bone.rotation_mode == "QUATERNION":
+                    axis, angle = mathutils.Quaternion((1, 0, 0, 0)).to_axis_angle()
+                    if parent_distance == 1:
+                        print(point_rot)
+
                     axis, angle = mathutils.Quaternion((point_rot[1], point_rot[2], point_rot[3], point_rot[4])).to_axis_angle()
+
                     q = mathutils.Quaternion(axis, angle*ratio)
                     new_fcurves[0].keyframe_points.insert(frame_no, q.w)
                     new_fcurves[1].keyframe_points.insert(frame_no, q.x)
